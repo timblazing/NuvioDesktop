@@ -121,7 +121,7 @@ internal fun SportsHub(
             }
             if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
             scheduleError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
-            if (visible.isEmpty() && !loading) {
+            if (visible.isEmpty() && !loading && scheduleError == null) {
                 Text(when {
                     filter == "My teams" && favorites.isEmpty() -> "Follow a team on an event card to see its games here."
                     filter == "Live" -> "No live events for this league and date."

@@ -13,6 +13,7 @@ import kotlinx.serialization.json.*
 import java.net.URLEncoder
 import java.time.Instant
 import java.time.LocalDate
+import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -130,11 +131,13 @@ internal fun parseSportsChannels(payload: JsonArray, categories: Map<String, Str
 }.distinctBy { it.id }
 
 internal fun parseSportsEvents(raw: String, leagueId: String): List<SportsEvent> {
-    return Json.parseToJsonElement(raw).jsonObject.array("events").mapNotNull { item ->
+    val scheduled = Json.parseToJsonElement(raw).jsonObject["events"] as? JsonArray
+        ?: error("Schedule response is missing its events list.")
+    val parsed = scheduled.mapNotNull { item ->
         val event = item as? JsonObject ?: return@mapNotNull null
         val id = event.text("id").takeIf(String::isNotBlank) ?: return@mapNotNull null
         val competition = event.array("competitions").firstOrNull() as? JsonObject ?: return@mapNotNull null
-        val start = runCatching { Instant.parse(competition.text("date").ifBlank { event.text("date") }) }.getOrNull() ?: return@mapNotNull null
+        val start = runCatching { OffsetDateTime.parse(competition.text("date").ifBlank { event.text("date") }).toInstant() }.getOrNull() ?: return@mapNotNull null
         val status = (competition["status"] as? JsonObject ?: event.obj("status")).obj("type")
         val teams = competition.array("competitors").mapNotNull { competitor ->
             val c = competitor as? JsonObject ?: return@mapNotNull null
@@ -147,6 +150,8 @@ internal fun parseSportsEvents(raw: String, leagueId: String): List<SportsEvent>
             competition.array("geoBroadcasts").mapNotNull { (it as? JsonObject)?.obj("media")?.text("shortName")?.takeIf(String::isNotBlank) }
         SportsEvent("$leagueId:$id", leagueId, event.text("name"), start, status.text("state"), status.text("shortDetail").ifBlank { status.text("detail") }, teams, networks.distinct())
     }.distinctBy { it.id }.sortedBy { it.start }
+    check(scheduled.isEmpty() || parsed.isNotEmpty()) { "Schedule contained events but none could be read." }
+    return parsed
 }
 
 /** Deliberately conservative: suggestions are never presented as confirmed game coverage. */

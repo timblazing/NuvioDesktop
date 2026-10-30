@@ -67,7 +67,18 @@ initial Sports hub, not full feature parity with the Android TV fork. No TV-guid
 Native Compose tests cover connection, channel search, playback handoff, disconnected
 playback, filters, and narrow rendering. Unit tests cover scores, malformed rows,
 matching boundaries, URL escaping, provider-scoped choices, and live-history privacy.
-UI fixtures are synthetic games and channels, not a live IPTV playback claim. Images
+UI fixtures are synthetic games and channels, not a live IPTV playback claim. The
+opt-in schedule check uses real ESPN HTTP responses and verifies events appear in the native hub:
+
+```sh
+NUVIO_SPORTS_LIVE_SCHEDULES=1 ./gradlew :composeApp:desktopTest --tests '*SportsScheduleAcceptanceTest' -Pnuvio.sportsTest=true
+```
+
+ESPN timestamps can omit seconds (`2026-10-30T23:00Z`); parsing accepts minute/second
+precision and explicit timezone offsets. An unreadable nonempty schedule reports an error
+instead of claiming that no games are scheduled.
+
+Images
 are generated in `composeApp/build/reports/sports/`; test preferences are isolated
 under build directories. Real-provider validation is a separate acceptance step.
 

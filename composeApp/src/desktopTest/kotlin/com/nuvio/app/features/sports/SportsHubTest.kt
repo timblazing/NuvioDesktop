@@ -54,6 +54,18 @@ class SportsHubTest {
         onNodeWithText("Celtics").assertExists()
     }
 
+    @Test fun unreadableScheduleShowsAnErrorInsteadOfClaimingNoGames() = runDesktopComposeUiTest(width = 1440, height = 900) {
+        val failingSource = object : SportsSource {
+            override suspend fun events(league: SportsLeague, day: LocalDate): List<SportsEvent> = error("Unreadable schedule")
+            override suspend fun channels(connection: XtreamConnection): List<SportsChannel> = error("Not used")
+        }
+        setContent { NuvioTheme { SportsHub(source = failingSource, onPlay = { _, _, _ -> }) } }
+        waitUntil(timeoutMillis = 5_000) {
+            onAllNodesWithText("Could not refresh the schedule.", substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        onNodeWithText("No events scheduled for this league and date.").assertDoesNotExist()
+    }
+
     private fun DesktopComposeUiTest.content(width: Int, height: Int, onPlay: (String, String, String) -> Unit) {
         setContent {
             CompositionLocalProvider(LocalDensity provides Density(1f)) {
