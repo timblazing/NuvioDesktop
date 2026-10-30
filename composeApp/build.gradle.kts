@@ -1262,10 +1262,12 @@ tasks.matching {
 compose.desktop {
     application {
         mainClass = "com.nuvio.app.MainKt"
+        val sportsTestBuild = providers.gradleProperty("nuvio.sportsTest").orNull == "true"
         val smokePlayerUrl = providers.gradleProperty("nuvio.desktop.smokePlayerUrl").orNull
             ?: System.getenv("NUVIO_DESKTOP_SMOKE_PLAYER_URL")
         jvmArgs += listOfNotNull(
             "-Dapple.awt.application.appearance=NSAppearanceNameDarkAqua",
+            if (sportsTestBuild) "-Dnuvio.desktop.sportsTest=true" else null,
             // Keep AWT from loading its own GTK (Swing L&F/file dialogs): the
             // bridge owns the process's GTK via initGtkEarly (skoruppa's fix).
             "-Djdk.gtk.version=0",
@@ -1279,7 +1281,7 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.AppImage)
-            packageName = "Nuvio"
+            packageName = if (sportsTestBuild) "Nuvio Sports Test" else "Nuvio"
             packageVersion = desktopReleasePackageVersion
             vendor = "Nuvio Media"
             if (isMacHost) {
@@ -1294,10 +1296,10 @@ compose.desktop {
                 "jdk.unsupported",
             )
             macOS {
-                bundleID = "com.nuvio.media.desktop"
+                bundleID = if (sportsTestBuild) "com.nuvio.media.desktop.sportstest" else "com.nuvio.media.desktop"
                 iconFile.set(project.file("src/desktopMain/resources/icons/nuvio-app-icon-transparent.icns"))
                 infoPlist {
-                    extraKeysRawXml = """
+                    extraKeysRawXml = if (sportsTestBuild) "" else """
                         <key>CFBundleURLTypes</key>
                         <array>
                             <dict>
@@ -1693,4 +1695,12 @@ configurations.all {
     exclude(group = "androidx.media3", module = "media3-datasource")
     exclude(group = "androidx.media3", module = "media3-datasource-okhttp")
     exclude(group = "androidx.media3", module = "media3-extractor")
+}
+
+// Test isolation also covers preferences loaded by native Compose UI tests.
+if (providers.gradleProperty("nuvio.sportsTest").orNull == "true") {
+    tasks.withType<Test>().configureEach {
+        systemProperty("nuvio.desktop.dataDir", layout.buildDirectory.dir("sports-test-data").get().asFile.absolutePath)
+        systemProperty("nuvio.desktop.cacheDir", layout.buildDirectory.dir("sports-test-cache").get().asFile.absolutePath)
+    }
 }

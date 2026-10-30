@@ -27,7 +27,7 @@ internal fun PlayerLaunch.externalPlaybackSession(): WatchProgressPlaybackSessio
     lastStreamTitle = streamTitle,
     lastStreamSubtitle = streamSubtitle,
     pauseDescription = pauseDescription,
-    lastSourceUrl = sourceUrl,
+    lastSourceUrl = sourceUrl.takeUnless { parentMetaType == "live" },
 )
 
 internal suspend fun recordExternalPlaybackProgress(
@@ -35,6 +35,7 @@ internal suspend fun recordExternalPlaybackProgress(
     fallbackSession: WatchProgressPlaybackSession?,
 ) {
     val session = result.playbackSession ?: fallbackSession ?: return
+    if (session.parentMetaType == "live") return
     // A completed playback may carry no position at all (MX Player), so only drop position-less
     // results that were not reported as played to the end.
     if (result.positionMs <= 0L && result.endedByUser) return

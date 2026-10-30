@@ -6,6 +6,7 @@ enum class AppScreenTab {
     Home,
     Search,
     Library,
+    Sports,
     Settings,
     ;
 
@@ -19,6 +20,7 @@ internal fun AppScreenTab.toNativeNavigationTab(): NativeNavigationTab = when (t
     AppScreenTab.Home -> NativeNavigationTab.Home
     AppScreenTab.Search -> NativeNavigationTab.Search
     AppScreenTab.Library -> NativeNavigationTab.Library
+    AppScreenTab.Sports -> NativeNavigationTab.Home // Desktop-only tab.
     AppScreenTab.Settings -> NativeNavigationTab.Settings
 }
 

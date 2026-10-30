@@ -432,6 +432,7 @@ internal fun MainAppContent(
                 searchFocusRequestCount++
                 searchScrollToTopRequests.tryEmit(Unit)
             }
+            AppScreenTab.Sports -> Unit
             AppScreenTab.Library -> libraryScrollToTopRequests.tryEmit(Unit)
             AppScreenTab.Settings -> settingsRootActionRequests.tryEmit(Unit)
         }
@@ -1409,6 +1410,16 @@ internal fun MainAppContent(
                         ),
                         actions = { isTabletLayout ->
                             AppTabActions(
+                                onSportsPlay = { title, url, channelId ->
+                                    val launch = com.nuvio.app.features.player.PlayerLaunch(
+                                        profileId = profileState.activeProfile?.profileIndex ?: 0,
+                                        title = title, sourceUrl = url, streamTitle = title,
+                                        sourceHeaders = mapOf("User-Agent" to com.nuvio.app.features.sports.SportsIptvUserAgent),
+                                        providerName = "Sports IPTV", contentType = "live",
+                                        parentMetaId = "sports:$channelId", parentMetaType = "live",
+                                    )
+                                    navController.navigate(PlayerRoute(PlayerLaunchStore.put(launch), title))
+                                },
                                 onCatalogClick = onCatalogClick,
                                 onPosterClick = navController::openPreview,
                                 onPosterLongClick = { meta ->
