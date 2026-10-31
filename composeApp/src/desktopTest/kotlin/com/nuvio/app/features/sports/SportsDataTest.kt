@@ -39,11 +39,12 @@ class SportsDataTest {
     }
 
     @Test fun matcherUsesWordBoundariesAndPreservesNumberedNetworks() {
-        val channels = listOf(SportsChannel("1", "US | ESPN HD"), SportsChannel("2", "ESPN2 FHD"), SportsChannel("3", "ESPN News"), SportsChannel("4", "ESPNews"), SportsChannel("5", "Boston Celtics vs Chicago Bulls"))
+        val channels = listOf(SportsChannel("1", "US | ESPN HD", "USA | SPORTS"), SportsChannel("2", "ESPN2 FHD", "USA | SPORTS"), SportsChannel("3", "ESPN News", "USA | SPORTS"),
+            SportsChannel("4", "ESPNews", "USA | SPORTS"), SportsChannel("5", "Boston Celtics vs Chicago Bulls", "USA | NBA"))
         val event = event().copy(networks = listOf("ESPN2"))
-        assertEquals(listOf("5", "2"), sportsMatches(event, channels).map { it.channel.id })
-        assertEquals("Both teams in channel name", sportsMatches(event, channels).first().reason)
-        assertEquals("4", sportsMatches(event, channels, "4").first().channel.id)
+        val matches = sportsMatches(event, channels, now = event.start)
+        assertEquals(listOf("5", "2"), matches.map { it.channel.id })
+        assertEquals("Both teams in channel name", matches.first().reason)
     }
 
     @Test fun channelParserAcceptsNumericAndStringIdsAndIgnoresInvalidEntries() {

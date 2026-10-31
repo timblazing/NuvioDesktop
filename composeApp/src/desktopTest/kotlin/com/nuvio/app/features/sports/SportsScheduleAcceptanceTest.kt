@@ -28,9 +28,9 @@ class SportsScheduleAcceptanceTest {
                 override suspend fun channels(connection: XtreamConnection) = error("Not used by schedule acceptance")
             }
             runDesktopComposeUiTest(width = 1440, height = 900) {
-                setContent { NuvioTheme { SportsHub(source = source, onPlay = { _, _, _ -> }) } }
+                setContent { NuvioTheme { SportsHub(source = source, onPlay = {}) } }
                 onNodeWithText("NBA", substring = false).performClick()
-                waitUntil(timeoutMillis = 30_000) { onAllNodesWithText("Find channels").fetchSemanticsNodes().isNotEmpty() }
+                waitUntil(timeoutMillis = 30_000) { onAllNodes(hasContentDescription("Watch", substring = true)).fetchSemanticsNodes().isNotEmpty() }
                 onNodeWithText("${games.size} events ·", substring = true).assertExists()
                 val directory = File("build/reports/sports").apply { mkdirs() }
                 ImageIO.write(onAllNodes(isRoot()).onLast().captureToImage().toAwtImage(), "png", File(directory, "live-nba.png"))

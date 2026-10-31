@@ -1,7 +1,8 @@
 package com.nuvio.app.features.sports
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -25,7 +26,7 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
 @Composable
-internal actual fun SportsScreen(topChromePadding: Dp?, active: Boolean, onPlay: (String, String, String) -> Unit) {
+internal actual fun SportsScreen(topChromePadding: Dp?, active: Boolean, onPlay: (SportsPlaybackRequest) -> Unit) {
     val source = remember { SportsHttpSource() }
     DisposableEffect(source) { onDispose { source.close() } }
     SportsHub(source, topChromePadding, active, onPlay)
@@ -36,8 +37,11 @@ internal fun SportsHub(
     source: SportsSource,
     topChromePadding: Dp? = null,
     active: Boolean = true,
-    onPlay: (String, String, String) -> Unit,
+    onPlay: (SportsPlaybackRequest) -> Unit,
+    resolveSources: (suspend (SportsEvent, XtreamConnection, List<SportsChannel>) -> List<SportsPlaybackSource>)? = null,
 ) {
+    val resolver = remember { SportsResolver() }
+    val resolve = resolveSources ?: resolver::resolve
     val scope = rememberCoroutineScope()
     val preferences = remember { DesktopStorage.store("sports_preferences") }
     var favorites by remember { mutableStateOf(preferences.getStringSet("teams").orEmpty()) }
@@ -54,8 +58,10 @@ internal fun SportsHub(
     var connection by remember { mutableStateOf<XtreamConnection?>(null) }
     var channels by remember { mutableStateOf<List<SportsChannel>>(emptyList()) }
     var showConnection by remember { mutableStateOf(false) }
-    var pickedEvent by remember { mutableStateOf<SportsEvent?>(null) }
-    var browseChannels by remember { mutableStateOf(false) }
+    var pendingEvent by remember { mutableStateOf<SportsEvent?>(null) }
+    fun watch(event: SportsEvent, account: XtreamConnection, available: List<SportsChannel>) {
+        onPlay(SportsPlaybackRequest(event.name, event.id) { resolve(event, account, available) })
+    }
     var connectionJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     LaunchedEffect(league, day, active, refresh) {
@@ -106,10 +112,6 @@ internal fun SportsHub(
                 TextButton(onClick = { day = day.minusDays(1) }, enabled = day > LocalDate.now().minusDays(7)) { Text("Previous") }
                 TextButton(onClick = { day = LocalDate.now() }) { Text(if (day == LocalDate.now()) "Today" else day.format(DateTimeFormatter.ofPattern("EEE, MMM d"))) }
                 TextButton(onClick = { day = day.plusDays(1) }, enabled = day < LocalDate.now().plusDays(7)) { Text("Next") }
-                if (!narrow) {
-                    Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { browseChannels = true }, enabled = channels.isNotEmpty()) { Text("Browse channels (${channels.size})") }
-                }
             }
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(listOf("All events", "Live", "My teams")) { item -> FilterChip(filter == item, { filter = item }, label = { Text(item) }) }
@@ -140,10 +142,13 @@ internal fun SportsHub(
                     SportsEventCard(event, favorites, onFollow = { team ->
                         favorites = if (team.id in favorites) favorites - team.id else favorites + team.id
                         preferences.putStringSet("teams", favorites)
-                    }, onChannels = { pickedEvent = event })
+                    }, onWatch = {
+                        val account = connection
+                        if (account == null) { pendingEvent = event; showConnection = true }
+                        else watch(event, account, channels)
+                    })
                 }
             }
-            if (narrow) TextButton(onClick = { browseChannels = true }, enabled = channels.isNotEmpty()) { Text("Browse channels (${channels.size})") }
         }
     }
 
@@ -151,46 +156,33 @@ internal fun SportsHub(
 
     if (showConnection) SportsConnectionDialog(
         connected = connection != null,
-        onDismiss = { showConnection = false },
+        onDismiss = { showConnection = false; pendingEvent = null },
         onDisconnect = {
             connectionJob?.cancel()
-            connection = null; channels = emptyList(); showConnection = false; pickedEvent = null; browseChannels = false
+            connection = null; channels = emptyList(); showConnection = false; pendingEvent = null
         },
         onConnect = { candidate, completed ->
             connectionJob?.cancel()
             connectionJob = scope.launch {
                 try {
-                    val loaded = source.channels(candidate)
+                    val loaded = source.channels(candidate).filter { isAllowedSportsGroup(it.category) }
+                    if (loaded.isEmpty()) {
+                        completed("No USA or UK channel groups were found in this account.")
+                        return@launch
+                    }
                     connection = candidate; channels = loaded; showConnection = false
                     completed(null)
+                    pendingEvent?.let { event -> pendingEvent = null; watch(event, candidate, loaded) }
                 } catch (cancel: CancellationException) { throw cancel }
                 catch (_: Exception) { completed("Could not connect. Check the server address, account status, username and password.") }
             }
         },
     )
-    if (pickedEvent != null || browseChannels) {
-        val event = pickedEvent
-        if (connection == null) {
-            AlertDialog(onDismissRequest = { pickedEvent = null; browseChannels = false }, title = { Text("Connect your IPTV provider") },
-                text = { Text("Scores work without IPTV. Connect your Xtream account to find channels and watch games.") },
-                confirmButton = { TextButton(onClick = { pickedEvent = null; browseChannels = false; showConnection = true }) { Text("Connect IPTV") } },
-                dismissButton = { TextButton(onClick = { pickedEvent = null; browseChannels = false }) { Text("Close") } })
-        } else {
-            SportsChannelDialog(event, channels, event?.let { preferences.getString(connection!!.mappingKey(it.id)) },
-                onDismiss = { pickedEvent = null; browseChannels = false },
-                onPlay = { channel, save ->
-                    val current = connection ?: return@SportsChannelDialog
-                    if (save && event != null) preferences.putString(current.mappingKey(event.id), channel.id)
-                    pickedEvent = null; browseChannels = false
-                    onPlay(event?.name ?: channel.name, current.streamUrl(channel), channel.id)
-                })
-        }
-    }
 }
 
 @Composable
-private fun SportsEventCard(event: SportsEvent, favorites: Set<String>, onFollow: (SportsTeam) -> Unit, onChannels: () -> Unit) {
-    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+private fun SportsEventCard(event: SportsEvent, favorites: Set<String>, onFollow: (SportsTeam) -> Unit, onWatch: () -> Unit) {
+    Card(onClick = onWatch, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Watch ${event.name}" }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(if (event.isLive) "Live · ${event.detail}" else if (event.isFinal) event.detail else "${event.localTime} · ${event.detail}",
                 style = MaterialTheme.typography.labelLarge, color = if (event.isLive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -205,7 +197,6 @@ private fun SportsEventCard(event: SportsEvent, favorites: Set<String>, onFollow
                 }
             } else Text(event.name, style = MaterialTheme.typography.titleMedium)
             Text(event.networks.joinToString(" · ").ifEmpty { "Broadcast network to be announced" }, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = onChannels, contentPadding = PaddingValues(0.dp)) { Text("Find channels") }
         }
     }
 }
@@ -249,42 +240,3 @@ private fun SportsConnectionDialog(
     )
 }
 
-@Composable
-private fun SportsChannelDialog(event: SportsEvent?, channels: List<SportsChannel>, pinnedId: String?, onDismiss: () -> Unit, onPlay: (SportsChannel, Boolean) -> Unit) {
-    var search by remember { mutableStateOf("") }
-    var allChannels by remember { mutableStateOf(event == null) }
-    var save by remember { mutableStateOf(false) }
-    val suggestions = remember(event, channels, pinnedId) { event?.let { sportsMatches(it, channels, pinnedId) }.orEmpty() }
-    val shown = remember(allChannels, search, channels, suggestions) {
-        (if (allChannels || search.isNotBlank()) channels.map { SportsMatch(it, it.category, 0) } else suggestions)
-            .filter { search.isBlank() || (it.channel.name + " " + it.channel.category).contains(search, ignoreCase = true) }
-    }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(event?.name ?: "Your channels", maxLines = 2) },
-        text = {
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (event != null) Text("Suggestions use team and broadcast names. Check the channel before watching; coverage can vary by region.", style = MaterialTheme.typography.bodySmall)
-                OutlinedTextField(search, { search = it }, label = { Text("Search all channels") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                if (event != null) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(allChannels, { allChannels = it }); Text("Show all channels")
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(save, { save = it }); Text("Remember my choice for this event")
-                    }
-                }
-                Text("${shown.size} channels", style = MaterialTheme.typography.labelMedium)
-                if (shown.isEmpty()) Text("No suggestions. Search your provider's channel names or show all channels.")
-                LazyColumn(Modifier.heightIn(max = 340.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    items(shown, key = { it.channel.id }) { match ->
-                        TextButton(onClick = { onPlay(match.channel, save) }, modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.fillMaxWidth()) {
-                                Text(match.channel.name)
-                                if (match.reason.isNotBlank()) Text(match.reason, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-                }
-            }
-        }, confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
-    )
-}

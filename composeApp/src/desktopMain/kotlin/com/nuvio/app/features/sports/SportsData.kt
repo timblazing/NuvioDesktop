@@ -20,19 +20,12 @@ import java.time.format.DateTimeFormatter
 // Inspired by homelessbrian/NuvioPlusIPTV's event-first Sports hub (GPL-3.0).
 internal data class SportsLeague(val id: String, val label: String, val path: String, val query: String = "")
 internal val sportsLeagues = listOf(
-    SportsLeague("nfl", "NFL", "football/nfl"),
     SportsLeague("nba", "NBA", "basketball/nba"),
-    SportsLeague("nhl", "NHL", "hockey/nhl"),
-    SportsLeague("mlb", "MLB", "baseball/mlb"),
-    SportsLeague("ncaaf", "College football", "football/college-football", "80"),
-    SportsLeague("ncaam", "College basketball", "basketball/mens-college-basketball", "50"),
-    SportsLeague("epl", "Premier League", "soccer/eng.1"),
-    SportsLeague("ucl", "Champions League", "soccer/uefa.champions"),
-    SportsLeague("mls", "MLS", "soccer/usa.1"),
-    SportsLeague("laliga", "La Liga", "soccer/esp.1"),
-    SportsLeague("ufc", "UFC", "mma/ufc"),
-    SportsLeague("f1", "Formula 1", "racing/f1"),
+    SportsLeague("nfl", "NFL", "football/nfl"),
+    SportsLeague("ncaaf", "NCAAF", "football/college-football", "80"),
+    SportsLeague("epl", "EPL", "soccer/eng.1"),
 )
+
 internal data class SportsTeam(val id: String, val name: String, val shortName: String, val logo: String?, val score: String?)
 internal data class SportsEvent(
     val id: String,
@@ -49,6 +42,7 @@ internal data class SportsEvent(
     val localTime: String get() = DateTimeFormatter.ofPattern("h:mm a").withZone(ZoneId.systemDefault()).format(start)
 }
 internal data class SportsChannel(val id: String, val name: String, val category: String = "", val logo: String? = null)
+internal data class SportsProgramme(val title: String, val start: Instant, val end: Instant, val description: String = "")
 internal data class SportsMatch(val channel: SportsChannel, val reason: String, val rank: Int)
 internal enum class SportsStreamFormat(val extension: String, val label: String) { HLS("m3u8", "HLS"), TS("ts", "MPEG-TS") }
 
@@ -84,6 +78,7 @@ internal class XtreamConnection(server: String, val username: String, private va
 internal interface SportsSource {
     suspend fun events(league: SportsLeague, day: LocalDate): List<SportsEvent>
     suspend fun channels(connection: XtreamConnection): List<SportsChannel>
+    suspend fun programmes(connection: XtreamConnection, channel: SportsChannel): List<SportsProgramme> = emptyList()
 }
 internal class SportsHttpSource : SportsSource, AutoCloseable {
     private val http = HttpClient(CIO) {
@@ -120,6 +115,18 @@ internal class SportsHttpSource : SportsSource, AutoCloseable {
         check(channels.isNotEmpty()) { "This account returned no live channels." }
         return channels
     }
+    override suspend fun programmes(connection: XtreamConnection, channel: SportsChannel): List<SportsProgramme> {
+        val response = http.get("${connection.baseUrl}/player_api.php") {
+            header("User-Agent", SportsIptvUserAgent)
+            parameter("username", connection.username)
+            parameter("password", connection.passwordForRequest())
+            parameter("action", "get_short_epg")
+            parameter("stream_id", channel.id)
+            parameter("limit", 12)
+        }
+        check(response.status.value in 200..299) { "Programme data unavailable." }
+        return parseSportsProgrammes(response.bodyAsText())
+    }
     override fun close() = http.close()
 }
 
@@ -154,30 +161,23 @@ internal fun parseSportsEvents(raw: String, leagueId: String): List<SportsEvent>
     return parsed
 }
 
-/** Deliberately conservative: suggestions are never presented as confirmed game coverage. */
-internal fun sportsMatches(event: SportsEvent, channels: List<SportsChannel>, pinnedChannelId: String? = null): List<SportsMatch> {
-    val networks = event.networks.map(::normalizeSportsName).filter { it.length >= 2 }
-    val teamNames = event.teams.map { team ->
-        listOf(team.name, team.shortName).map(::normalizeSportsName).filter { it.length >= 5 }.distinct()
-    }
-    return channels.mapNotNull { channel ->
-        val name = normalizeSportsName(channel.name)
-        val teamHits = teamNames.count { aliases -> aliases.any { containsSportsPhrase(name, it) } }
-        val network = networks.firstOrNull { containsSportsPhrase(name, it) }
-        when {
-            channel.id == pinnedChannelId -> SportsMatch(channel, "Your saved choice", 100)
-            teamHits >= 2 -> SportsMatch(channel, "Both teams in channel name", 90)
-            teamHits == 1 -> SportsMatch(channel, "Team name in channel name", 60)
-            network != null -> SportsMatch(channel, "Broadcast network suggestion", 40)
-            else -> null
-        }
-    }.sortedWith(compareByDescending<SportsMatch> { it.rank }.thenBy { it.channel.name }).take(40)
-}
-private val sportsPunctuation = Regex("[^a-z0-9]+")
-private val sportsWhitespace = Regex("\\s+")
-internal fun normalizeSportsName(value: String): String = value.lowercase().replace("&", " and ").replace("+", " plus ")
-    .replace(sportsPunctuation, " ").trim().replace(sportsWhitespace, " ")
-private fun containsSportsPhrase(haystack: String, needle: String) = " $haystack ".contains(" $needle ")
 private fun JsonObject.obj(key: String) = this[key] as? JsonObject ?: JsonObject(emptyMap())
 private fun JsonObject.array(key: String) = this[key] as? JsonArray ?: JsonArray(emptyList())
 private fun JsonObject.text(key: String) = (this[key] as? JsonPrimitive)?.contentOrNull.orEmpty()
+
+internal fun parseSportsProgrammes(raw: String): List<SportsProgramme> =
+    Json.parseToJsonElement(raw).jsonObject.array("epg_listings").mapNotNull { item ->
+        val row = item as? JsonObject ?: return@mapNotNull null
+        val start = row.text("start_timestamp").toLongOrNull() ?: return@mapNotNull null
+        val end = row.text("end_timestamp").ifBlank { row.text("stop_timestamp") }.toLongOrNull() ?: return@mapNotNull null
+        val title = decodeProgrammeText(row.text("title"))
+        if (title.isBlank() || end <= start) return@mapNotNull null
+        SportsProgramme(title, Instant.ofEpochSecond(start), Instant.ofEpochSecond(end), decodeProgrammeText(row.text("description")))
+    }
+
+private fun decodeProgrammeText(value: String): String = runCatching {
+    val bytes = java.util.Base64.getDecoder().decode(value)
+    val decoded = Charsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+        .decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+    decoded.takeIf { text -> text.none { it.isISOControl() && it !in "\n\r\t" } } ?: value
+}.getOrDefault(value)

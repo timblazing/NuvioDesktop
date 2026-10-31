@@ -165,7 +165,7 @@ internal data class AppTabRequests(
 )
 
 internal data class AppTabActions(
-    val onSportsPlay: (String, String, String) -> Unit = { _, _, _ -> },
+    val onSportsPlay: (com.nuvio.app.features.sports.SportsPlaybackRequest) -> Unit = {},
     val onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     val onPosterClick: ((MetaPreview) -> Unit)? = null,
     val onPosterLongClick: ((MetaPreview) -> Unit)? = null,
