@@ -90,7 +90,7 @@ internal val PlayerScreenRuntime.playbackSession: WatchProgressPlaybackSession
         lastStreamTitle = activeStreamTitle,
         lastStreamSubtitle = activeStreamSubtitle,
         pauseDescription = activePauseDescription,
-        lastSourceUrl = activeSourceUrl.takeUnless { ServerStreams.isServerSourceId(activeProviderAddonId) },
+        lastSourceUrl = activeSourceUrl.takeUnless { parentMetaType == "live" || ServerStreams.isServerSourceId(activeProviderAddonId) },
     )
 
 internal fun PlayerScreenRuntime.currentLaunch(launch: PlayerLaunch): PlayerLaunch {

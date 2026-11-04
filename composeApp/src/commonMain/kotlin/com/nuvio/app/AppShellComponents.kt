@@ -35,6 +35,8 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.SportsScore
+import com.nuvio.app.features.sports.SportsScreen
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -163,6 +165,7 @@ internal data class AppTabRequests(
 )
 
 internal data class AppTabActions(
+    val onSportsPlay: (com.nuvio.app.features.sports.SportsPlaybackRequest) -> Unit = {},
     val onCatalogClick: ((HomeCatalogSection) -> Unit)? = null,
     val onPosterClick: ((MetaPreview) -> Unit)? = null,
     val onPosterLongClick: ((MetaPreview) -> Unit)? = null,
@@ -282,6 +285,12 @@ internal fun AppTabHost(
                     disintegrationRequest = state.libraryDisintegrationRequest,
                 )
             }
+
+            AppScreenTab.Sports -> SportsScreen(
+                topChromePadding = state.topChromePadding,
+                active = state.tabsRouteActiveState.value && selectedTab == AppScreenTab.Sports,
+                onPlay = actions.onSportsPlay,
+            )
 
             AppScreenTab.Settings -> {
                 SettingsScreen(
@@ -859,6 +868,14 @@ internal fun DesktopHoverSidebar(
                         modifier = Modifier.size(DesktopSidebarIconSize),
                         tint = color,
                     )
+                }
+                DesktopSidebarItem(
+                    label = "Sports",
+                    selected = selectedTab == AppScreenTab.Sports,
+                    expanded = sidebarExpanded,
+                    onClick = { selectTab(AppScreenTab.Sports) },
+                ) { color ->
+                    Icon(Icons.Filled.SportsScore, "Sports", Modifier.size(DesktopSidebarIconSize), tint = color)
                 }
                 DesktopSidebarItem(
                     label = stringResource(Res.string.compose_settings_page_root),

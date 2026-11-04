@@ -43,6 +43,14 @@ internal fun PlayerDestination(
         Box(modifier = Modifier.fillMaxSize())
         return
     }
+    launch.sportsPlayback?.let { request ->
+        com.nuvio.app.features.sports.SportsPlaybackScreen(
+            request = request,
+            onBack = popBack,
+            onSystemBackHandlerChanged = { handler -> onSystemBackHandlerChanged(route, handler) },
+        )
+        return
+    }
     val currentFullscreen = com.nuvio.app.core.ui.isFullscreenActionActive()
     val initialFullscreen = remember { currentFullscreen }
     val onBackBase = rememberGuardedPlayerPopBackStack(

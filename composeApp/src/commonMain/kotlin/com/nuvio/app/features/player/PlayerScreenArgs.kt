@@ -10,6 +10,9 @@ internal typealias PlayerReleaseBeforeBack = (
 internal typealias PlayerBackRequest = (releaseBeforeBack: PlayerReleaseBeforeBack) -> Unit
 
 internal data class PlayerScreenArgs(
+    val onPlaybackSnapshot: ((PlayerPlaybackSnapshot) -> Unit)? = null,
+    val onPlaybackFailure: (() -> Unit)? = null,
+    val onPlaybackControllerReady: ((PlayerEngineController?) -> Unit)? = null,
     val profileId: Int,
     val title: String,
     val sourceUrl: String,

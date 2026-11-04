@@ -590,9 +590,11 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                     playerController = controller.takeIf { sourceAvailable }
                     playerLifecycleController = controller
                     playerControllerSourceUrl = surfaceSource?.sourceUrl
+                    args.onPlaybackControllerReady?.invoke(controller.takeIf { sourceAvailable })
                 },
                 onSnapshot = { snapshot ->
                     if (!updatePlaybackSnapshot(snapshot)) return@PlatformPlayerSurface
+                    args.onPlaybackSnapshot?.invoke(snapshot)
                     refreshAudioTracksIfChanged()
                     if (!snapshot.isLoading) initialLoadCompleted = true
                     if (snapshot.isEnded) {
@@ -601,6 +603,11 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
                     }
                 },
                 onError = { message ->
+                    val sportsFailure = args.onPlaybackFailure
+                    if (message != null && sportsFailure != null) {
+                        sportsFailure()
+                        return@PlatformPlayerSurface
+                    }
                     if (message != null && tryRefreshCredentialedSourceAfterError(message)) {
                         return@PlatformPlayerSurface
                     }

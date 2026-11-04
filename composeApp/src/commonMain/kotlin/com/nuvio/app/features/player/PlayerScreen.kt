@@ -47,9 +47,15 @@ internal fun PlayerScreen(
     launchId: Long? = null,
     sourceFilename: String? = null,
     stream: com.nuvio.app.features.streams.StreamItem? = null,
+    onPlaybackSnapshot: ((PlayerPlaybackSnapshot) -> Unit)? = null,
+    onPlaybackFailure: (() -> Unit)? = null,
+    onPlaybackControllerReady: ((PlayerEngineController?) -> Unit)? = null,
 ) {
     PlayerScreenContent(
         PlayerScreenArgs(
+            onPlaybackSnapshot = onPlaybackSnapshot,
+            onPlaybackFailure = onPlaybackFailure,
+            onPlaybackControllerReady = onPlaybackControllerReady,
             profileId = profileId,
             title = title,
             sourceUrl = sourceUrl,

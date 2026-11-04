@@ -52,13 +52,19 @@ private const val MacosDarkAquaAppearance = "NSAppearanceNameDarkAqua"
 
 @OptIn(ExperimentalComposeUiApi::class)
 fun main(args: Array<String>) {
+    val sportsTestMode = System.getProperty("nuvio.desktop.sportsTest") == "true" || "--sports-test" in args
+    if (sportsTestMode) {
+        val testRoot = java.nio.file.Paths.get(System.getProperty("user.home"), "Library", "Application Support", "Nuvio Sports Test")
+        System.setProperty("nuvio.desktop.dataDir", testRoot.toString())
+        System.setProperty("nuvio.desktop.cacheDir", testRoot.resolve("cache").toString())
+    }
     // On Linux, initialize GTK BEFORE AWT/Compose/Skia to prevent GdkDisplayManager
     // type registration conflict (Skiko partially loads GDK without full GTK init).
     if (System.getProperty("os.name", "").lowercase().contains("linux")) {
         runCatching { NativePlayerBridge.initGtkEarly() }
     }
     applyDesktopRendererPreference()
-    SentryInitializer.start()
+    if (!sportsTestMode) SentryInitializer.start()
     configureDesktopQuickJsLibrary()
     configureDesktopChrome()
     configureLinuxSwingGlobalsBeforeAwt()
@@ -67,10 +73,10 @@ fun main(args: Array<String>) {
     preloadNativePlayerBridgeAsync()
     // Load cached profile data synchronously so the profile color is available
     // on the very first Compose frame (matching Android's SharedPreferences behavior).
-    ProfileRepository.loadCachedProfiles()
+    if (!sportsTestMode) ProfileRepository.loadCachedProfiles()
     AppIconRepository.ensureLoaded()
-    AutoSyncPreferencesDesktop.initialize()
-    DiscordPresenceManager.start()
+    if (!sportsTestMode) AutoSyncPreferencesDesktop.initialize()
+    if (!sportsTestMode) DiscordPresenceManager.start()
 
     application {
         val appIconState by AppIconRepository.state.collectAsState()
@@ -130,7 +136,7 @@ fun main(args: Array<String>) {
                 SentryInitializer.close()
                 exitApplication()
             },
-            title = if (smokePlayerUrl == null) "Nuvio" else "Nuvio Player Smoke",
+            title = if (sportsTestMode) "Nuvio Sports Test" else if (smokePlayerUrl == null) "Nuvio" else "Nuvio Player Smoke",
             state = windowState,
             icon = painterResource(appIconState.selected.transparentPreviewResource),
             init = ::configureMacosWindowBeforePeer,
@@ -215,7 +221,9 @@ fun main(args: Array<String>) {
                 }
             }
 
-            if (smokePlayerUrl == null) {
+            if (sportsTestMode) {
+                NuvioTheme { com.nuvio.app.features.sports.SportsTestApp() }
+            } else if (smokePlayerUrl == null) {
                 ProvideDesktopWindowInsets(isFullscreen = windowState.placement == WindowPlacement.Fullscreen) {
                     MiddleClickAutoscroll { App() }
                 }
